@@ -5,7 +5,7 @@ import time
 
 
 class TCP:
-    def __init__(self, host, port, loss_prob=0.02, corruption_prob=0.1):
+    def __init__(self, host, port, loss_prob=0.1, corruption_prob=0.1):
         self.address = (host, port)
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.bind(self.address)
