@@ -1,10 +1,11 @@
 import socket
 import random
 from Packet import Packet
+import time
 
 
 class TCP:
-    def __init__(self, host, port, loss_prob=0.0, corruption_prob=0.0):
+    def __init__(self, host, port, loss_prob=0.02, corruption_prob=0.1):
         self.address = (host, port)
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.bind(self.address)
@@ -96,8 +97,9 @@ class TCP:
                 print(f"Error sending packet: {e}")
                 continue
 
-        # Wait for ACK
-        while True:
+        # Wait for ACK with retransmission
+        retries = 3  # Maximum number of retries
+        while retries > 0:
             try:
                 response, _ = self.socket.recvfrom(1024)
                 ack_packet = Packet.unpack(response)
@@ -111,7 +113,12 @@ class TCP:
                     break
             except socket.timeout:
                 print("Timeout occurred while waiting for ACK packet. Retrying...")
-                break
+                retries -= 1
+                if retries == 0:
+                    print("Maximum number of retries reached. Aborting.")
+                    return
+                # Retransmit packet
+                self.socket.sendto(packet_data, dest_address)
 
     def receive(self):
         if not self.handshake_succeeded:
@@ -121,10 +128,17 @@ class TCP:
             try:
                 data, sender_address = self.socket.recvfrom(1024)
 
-                if random.random() < self.loss_prob:  # Simulate packet loss
+                # Simulate packet loss
+                if random.random() < self.loss_prob:
+                    print("Packet loss simulated.")
                     continue
+
+                # Simulate packet delay
+                time.sleep(random.uniform(0, 0.5))  # Adjust delay as needed
+
                 if random.random() < self.corruption_prob:  # Simulate packet corruption
                     # Corrupt packet data
+                    print("Packet corruption simulated")
                     data = self.corrupt_packet(data)
 
                 recv_packet = Packet.unpack(data)
@@ -156,23 +170,24 @@ class TCP:
                     self.expected_seq_num += len(recv_packet.data)
                     self.next_seq_number = recv_packet.ack_num
 
-                    return recv_packet.data
+                    return recv_packet.data, sender_address
                 else:
-                    # Resend previous ACK
-                    ack_packet = Packet(
+                    # Request retransmission
+                    nack_packet = Packet(
                         self.next_seq_number,
                         self.expected_seq_num,
                         "",
-                        flags=0b0100000,
+                        flags=0b1000000,  # NACK flag set
                     )
-                    ack_data = ack_packet.pack()
+                    nack_data = nack_packet.pack()
 
+                    # Send NACK
                     while True:
                         try:
-                            self.socket.sendto(ack_data, sender_address)
+                            self.socket.sendto(nack_data, sender_address)
                             break
                         except socket.error as e:
-                            print(f"Error resending ACK packet: {e}")
+                            print(f"Error sending NACK packet: {e}")
                             continue
 
             except socket.timeout:
@@ -200,14 +215,14 @@ class TCP:
             try:
                 response, _ = self.socket.recvfrom(1024)
                 fin_ack_packet = Packet.unpack(response)
-                if fin_ack_packet.flags & 0b0110000:  # Check if FIN-ACK flag is set
+                if fin_ack_packet.flags & 0b0100000:  # Check if ACK flag is set
                     self.next_seq_number += 1
                     self.expected_seq_num += 1
                     break
             except socket.timeout:
                 print("Timeout occurred while waiting for FIN-ACK packet. Retrying...")
 
-        # Send ACK packet
+        # Send ACK for FIN-ACK packet
         ack_packet = Packet(
             self.next_seq_number, fin_ack_packet.seq_num + 1, "", flags=0b0100000
         )  # ACK flag set
@@ -231,47 +246,9 @@ class TCP:
 
         # Send FIN-ACK packet
         fin_ack_packet = Packet(
-            self.next_seq_number, fin_packet.seq_num + 1, "", flags=0b0110000
+            self.next_seq_number, fin_packet.seq_num + 1, "", flags=0b0100000
         )  # FIN-ACK flags set
         fin_ack_packed = fin_ack_packet.pack()
         self.socket.sendto(fin_ack_packed, sender_address)
-
-        # Wait for ACK packet
-        while True:
-            try:
-                ack_packet_data, _ = self.socket.recvfrom(1024)
-                ack_packet = Packet.unpack(ack_packet_data)
-                if ack_packet.flags & 0b0100000:  # Check if ACK flag is set
-                    self.next_seq_number = ack_packet.ack_num
-                    self.expected_seq_num = ack_packet.seq_num
-                    break
-            except socket.timeout:
-                print("Timeout occurred while waiting for ACK packet. Retrying...")
-
-        # Send FIN packet from this side
-        fin_packet = Packet(
-            self.next_seq_number, self.expected_seq_num, "", flags=0b0010000
-        )  # FIN flag set
-        fin_packed = fin_packet.pack()
-        self.socket.sendto(fin_packed, sender_address)
-
-        # Wait for FIN-ACK packet
-        while True:
-            try:
-                fin_ack_packet_data, _ = self.socket.recvfrom(1024)
-                fin_ack_packet = Packet.unpack(fin_ack_packet_data)
-                if fin_ack_packet.flags & 0b0110000:  # Check if FIN-ACK flag is set
-                    self.next_seq_number = fin_ack_packet.seq_num + 1
-                    self.expected_seq_num = fin_ack_packet.seq_num + 1
-                    break
-            except socket.timeout:
-                print("Timeout occurred while waiting for FIN-ACK packet. Retrying...")
-
-        # Send ACK packet
-        ack_packet = Packet(
-            self.next_seq_number, fin_ack_packet.seq_num + 1, "", flags=0b0100000
-        )  # ACK flag set
-        ack_packed = ack_packet.pack()
-        self.socket.sendto(ack_packed, sender_address)
 
         print("Connection closed successfully.")

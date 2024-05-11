@@ -10,7 +10,7 @@ def server():
     print("Server listening on port", port)
 
     while True:
-        data = tcp_server.receive()
+        data, _ = tcp_server.receive()
         print("Received data:", data)
 
 
