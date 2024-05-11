@@ -3,7 +3,7 @@ import hashlib
 
 
 class Packet:
-    MAX_DATA_LEN = 992  # Adjust based on your maximum data size
+    MAX_DATA_LEN = 980  # Adjust based on your maximum data size
     MAX_CHECKSUM_LEN = 32  # Adjust based on your checksum size (e.g., MD5 hash length)
 
     FORMAT = f"!IIHH{MAX_DATA_LEN}s{MAX_CHECKSUM_LEN}s"
@@ -43,7 +43,7 @@ class Packet:
         data_offset = struct.calcsize("!IIHH")
         end_data = data_offset + data_len
         encoded_data = packet[data_offset:end_data]
-        encoded_checksum = packet[524:]
+        encoded_checksum = packet[992:]
 
         # Decode the data and checksum
         data = encoded_data.decode("utf-8")
@@ -55,6 +55,6 @@ class Packet:
         packet_content = f"{self.seq_num}{self.ack_num}{self.flags}{self.data}"
         return hashlib.md5(packet_content.encode()).hexdigest()
 
-    def verify_checksum(self):
+    def verify_checksum(self, sent_checksum):
         recalculated_checksum = self.calculate_checksum()
-        return recalculated_checksum == self.checksum
+        return recalculated_checksum == sent_checksum
